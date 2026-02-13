@@ -71,6 +71,17 @@ const DEFAULT_MISSING_SKILLS = [
   "ETL Pipelines",
 ];
 
+const RESUME_FILE_SKILL_HINTS = {
+  SQL: [/sql/i, /query/i, /database/i, /data/i],
+  "Data Modeling": [/model/i, /schema/i, /warehouse/i, /analytics/i],
+  "ETL Pipelines": [/etl/i, /pipeline/i, /ingest/i, /batch/i],
+  "Backend API Design": [/backend/i, /api/i, /service/i, /node/i],
+  "Distributed Processing": [/spark/i, /distributed/i, /stream/i, /hadoop/i],
+  "Cloud Deployment": [/aws/i, /azure/i, /gcp/i, /cloud/i, /k8s/i],
+  "Data Warehousing": [/warehouse/i, /lake/i, /snowflake/i, /bigquery/i],
+  "Testing and Observability": [/test/i, /monitor/i, /observab/i, /alert/i],
+};
+
 const clampPercent = (value) => Math.max(0, Math.min(100, Math.round(value)));
 
 const clampScore10 = (value) => Math.max(1, Math.min(10, Math.round(value)));
@@ -86,16 +97,61 @@ const getRoleFocus = (jobDescription) => {
   return "Software Engineer";
 };
 
-const getMissingSkills = (jobDescription) => {
-  const matchedSkills = SKILL_SIGNAL_MAP.filter((entry) =>
+const getJdSkills = (jobDescription) => {
+  const extractedSkills = SKILL_SIGNAL_MAP.filter((entry) =>
     entry.pattern.test(jobDescription),
   ).map((entry) => entry.skill);
 
-  const chosenSkills = Array.from(
-    new Set([...matchedSkills, ...DEFAULT_MISSING_SKILLS]),
-  ).slice(0, 4);
+  if (extractedSkills.length > 0) {
+    return extractedSkills;
+  }
 
-  return chosenSkills.map((skill) => ({
+  return DEFAULT_MISSING_SKILLS;
+};
+
+const hashString = (value) => {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash +=
+      (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+
+  return hash >>> 0;
+};
+
+const isResumeLikelyToContainSkill = (fileName, skill) => {
+  const normalizedFileName = fileName.toLowerCase();
+  const hintPatterns = RESUME_FILE_SKILL_HINTS[skill] || [];
+
+  if (hintPatterns.some((pattern) => pattern.test(normalizedFileName))) {
+    return true;
+  }
+
+  // Deterministic fallback for mocked resume-skill inference.
+  const deterministicScore = hashString(`${normalizedFileName}:${skill}`) % 100;
+  return deterministicScore < 58;
+};
+
+const getDeterministicSkillMatch = (fileName, jdSkills) => {
+  const matchedSkills = jdSkills.filter((skill) =>
+    isResumeLikelyToContainSkill(fileName, skill),
+  );
+  const totalSkills = jdSkills.length || 1;
+  const matchPercentage = clampPercent((matchedSkills.length / totalSkills) * 100);
+
+  return {
+    matchedSkills,
+    totalSkills,
+    matchPercentage,
+  };
+};
+
+const getMissingSkills = (jdSkills, matchedSkills) => {
+  const missingSkillNames = jdSkills.filter((skill) => !matchedSkills.includes(skill));
+
+  return missingSkillNames.map((skill) => ({
     skill,
     improvementPoints: SKILL_IMPROVEMENT_MAP[skill] || [
       `Add a quantified resume bullet showing practical ${skill} delivery.`,
@@ -567,13 +623,12 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
       const roleFocus = getRoleFocus(jobDescription);
-      const missingSkills = getMissingSkills(jobDescription);
-      const atsScore = clampPercent(
-        88 - missingSkills.length * 4 + (Math.floor(Math.random() * 15) - 7),
-      );
-      const keywordMatch = clampPercent(
-        76 + (Math.floor(Math.random() * 17) - 8) - missingSkills.length * 2,
-      );
+      const jdSkills = getJdSkills(jobDescription);
+      const { matchedSkills, totalSkills, matchPercentage } =
+        getDeterministicSkillMatch(file.name, jdSkills);
+      const atsScore = matchPercentage;
+      const keywordMatch = matchPercentage;
+      const missingSkills = getMissingSkills(jdSkills, matchedSkills);
       const resumeImprovementSuggestions = getSuggestions(
         atsScore,
         keywordMatch,
@@ -619,6 +674,9 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
         fileName: file.name,
         jobDescription,
         roleFocus,
+        jdSkills,
+        matchedJdSkills: matchedSkills,
+        totalJdSkills: totalSkills,
         keywordMatch,
         suggestions: resumeImprovementSuggestions,
         interviewQuestions,
