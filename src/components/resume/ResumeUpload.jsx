@@ -2,6 +2,7 @@ import { useState } from "react";
 
 export default function ResumeUpload({ onAnalyze, loading }) {
   const [selectedFile, setSelectedFile] = useState(null);
+  const [jobDescription, setJobDescription] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = async (event) => {
@@ -12,8 +13,16 @@ export default function ResumeUpload({ onAnalyze, loading }) {
       return;
     }
 
+    if (!jobDescription.trim()) {
+      setError("Please add a job description to run analysis.");
+      return;
+    }
+
     setError("");
-    await onAnalyze(selectedFile);
+    await onAnalyze({
+      file: selectedFile,
+      jobDescription: jobDescription.trim(),
+    });
   };
 
   return (
@@ -37,6 +46,17 @@ export default function ResumeUpload({ onAnalyze, loading }) {
         {selectedFile ? (
           <span className="mt-3 block text-sm text-slate-500">{selectedFile.name}</span>
         ) : null}
+      </label>
+
+      <label className="mt-4 block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">Job Description</span>
+        <textarea
+          value={jobDescription}
+          onChange={(event) => setJobDescription(event.target.value)}
+          rows={6}
+          placeholder="Paste the job description to compare against this resume..."
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-none transition focus:border-slate-500"
+        />
       </label>
 
       {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
