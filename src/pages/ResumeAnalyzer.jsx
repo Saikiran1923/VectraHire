@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ResumeUpload from "../components/resume/ResumeUpload";
 
-const AI_COACH_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
+const AI_INTERVIEWER_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -17,6 +17,14 @@ const AI_COACH_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
   <path d="M40 48c2 2 4 3 8 3s6-1 8-3" stroke="#334155" stroke-width="2" fill="none" stroke-linecap="round"/>
 </svg>
 `)}`;
+
+const getSpeechRecognitionConstructor = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+};
 
 const SKILL_SIGNAL_MAP = [
   { skill: "SQL", pattern: /\bsql\b|postgres|mysql|snowflake|bigquery/i },
@@ -615,6 +623,13 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
   const [mockAnswer, setMockAnswer] = useState("");
   const [currentMockEvaluation, setCurrentMockEvaluation] = useState(null);
   const [mockEvaluations, setMockEvaluations] = useState([]);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const isSpeechRecognitionSupported = useMemo(
+    () => Boolean(getSpeechRecognitionConstructor()),
+    [],
+  );
 
   const handleAnalyze = async ({ file, jobDescription }) => {
     setIsAnalyzing(true);
@@ -709,6 +724,18 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
     }));
   };
 
+  const speakQuestionText = (questionText) => {
+    if (typeof window === "undefined" || !window.speechSynthesis || !questionText) {
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(questionText);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const playQuestionVoice = () => {
     if (!result) {
       return;
@@ -719,15 +746,55 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
       return;
     }
 
-    if (typeof window === "undefined" || !window.speechSynthesis) {
+    speakQuestionText(activeQuestion.question);
+  };
+
+  const handleMicrophoneCapture = () => {
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionConstructor) {
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(activeQuestion.question);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    window.speechSynthesis.speak(utterance);
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new SpeechRecognitionConstructor();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((resultItem) => resultItem[0]?.transcript || "")
+        .join(" ")
+        .trim();
+
+      if (transcript) {
+        setMockAnswer(transcript);
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+
+    try {
+      recognition.start();
+    } catch (error) {
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
   };
 
   const handleMockSubmit = (event) => {
@@ -736,6 +803,9 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
     if (!result || !mockAnswer.trim()) {
       return;
     }
+
+    recognitionRef.current?.stop();
+    setIsListening(false);
 
     const activeQuestion = result.mockInterviewQuestions[mockQuestionIndex];
     const evaluation = evaluateMockAnswer(activeQuestion, mockAnswer.trim(), result);
@@ -761,6 +831,9 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
       return;
     }
 
+    recognitionRef.current?.stop();
+    setIsListening(false);
+
     setMockQuestionIndex((previous) =>
       Math.min(previous + 1, result.mockInterviewQuestions.length - 1),
     );
@@ -769,6 +842,9 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
   };
 
   const handleRestartMockInterview = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+
     setMockQuestionIndex(0);
     setMockAnswer("");
     setCurrentMockEvaluation(null);
@@ -801,6 +877,34 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
 
     return buildMockInterviewResult(mockEvaluations, result);
   }, [isInterviewCompleted, mockEvaluations, result]);
+
+  useEffect(() => {
+    if (activeTab !== "mock" || !currentMockQuestion || currentMockEvaluation) {
+      return;
+    }
+
+    speakQuestionText(currentMockQuestion.question);
+  }, [activeTab, currentMockEvaluation, currentMockQuestion]);
+
+  useEffect(() => {
+    if (activeTab === "mock") {
+      return;
+    }
+
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, [activeTab]);
+
+  useEffect(
+    () => () => {
+      recognitionRef.current?.stop();
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    },
+    [],
+  );
 
   return (
     <section className="space-y-6">
@@ -964,6 +1068,20 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <img
+                    src={AI_INTERVIEWER_AVATAR}
+                    alt="AI Interviewer avatar"
+                    className="h-14 w-14 rounded-full border border-slate-300 bg-white p-1"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">AI Interviewer</p>
+                    <p className="text-xs text-slate-500">
+                      Digital human interviewer with voice
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -985,12 +1103,14 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
-                      AI
-                    </div>
+                    <img
+                      src={AI_INTERVIEWER_AVATAR}
+                      alt="AI Interviewer avatar"
+                      className="h-10 w-10 rounded-full border border-slate-300 bg-white p-0.5"
+                    />
                     <div>
                       <p className="text-sm font-semibold text-slate-800">
-                        Digital Interview Coach (voice enabled)
+                        AI Interviewer (voice enabled)
                       </p>
                       <p className="text-xs text-slate-500">
                         Question {mockQuestionIndex + 1} of{" "}
@@ -1003,7 +1123,7 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                     onClick={playQuestionVoice}
                     className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-white"
                   >
-                    Play voice
+                    Replay voice
                   </button>
                 </div>
 
@@ -1012,12 +1132,14 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-3 flex items-center gap-3">
                         <img
-                          src={AI_COACH_AVATAR}
-                          alt="AI Coach avatar"
+                          src={AI_INTERVIEWER_AVATAR}
+                          alt="AI Interviewer avatar"
                           className="h-12 w-12 rounded-full border border-slate-300 bg-white p-1"
                         />
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">AI Coach</p>
+                          <p className="text-sm font-semibold text-slate-800">
+                            AI Interviewer
+                          </p>
                           <p className="text-xs text-slate-500">
                             Digital interviewer avatar
                           </p>
@@ -1063,6 +1185,21 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                         >
                           Submit answer
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleMicrophoneCapture}
+                          disabled={
+                            !isSpeechRecognitionSupported ||
+                            Boolean(currentMockEvaluation)
+                          }
+                          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isSpeechRecognitionSupported
+                            ? isListening
+                              ? "Stop microphone"
+                              : "Use microphone"
+                            : "Microphone unavailable"}
+                        </button>
 
                         {currentMockEvaluation ? (
                           isLastMockQuestion ? (
@@ -1084,6 +1221,13 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                           )
                         ) : null}
                       </div>
+
+                      {!isSpeechRecognitionSupported ? (
+                        <p className="text-xs text-slate-500">
+                          Speech recognition is not supported in this browser. Use
+                          text input to answer.
+                        </p>
+                      ) : null}
                     </form>
 
                     {currentMockEvaluation ? (
@@ -1116,7 +1260,7 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                 {finalMockInterviewResult ? (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <h4 className="text-sm font-semibold text-slate-900">
-                      Mock Interview Result
+                      Final Interview Summary
                     </h4>
                     <p className="mt-2 text-sm text-slate-700">
                       Total score:{" "}
@@ -1153,7 +1297,7 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                     <div className="mt-4 grid gap-4 lg:grid-cols-2">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          JD specific improvement suggestions
+                          JD based improvement tips
                         </p>
                         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                           {finalMockInterviewResult.jdSpecificImprovementSuggestions.map(
@@ -1166,7 +1310,7 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
 
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Resume specific improvement suggestions
+                          Resume based improvement tips
                         </p>
                         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
                           {finalMockInterviewResult.resumeSpecificImprovementSuggestions.map(
