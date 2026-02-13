@@ -1,5 +1,22 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ResumeUpload from "../components/resume/ResumeUpload";
+
+const AI_COACH_AVATAR = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e2e8f0"/>
+      <stop offset="100%" stop-color="#cbd5e1"/>
+    </linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="48" fill="url(#bg)"/>
+  <circle cx="48" cy="40" r="22" fill="#f8fafc"/>
+  <path d="M24 84c4-15 14-24 24-24s20 9 24 24" fill="#f8fafc"/>
+  <circle cx="40" cy="38" r="3" fill="#334155"/>
+  <circle cx="56" cy="38" r="3" fill="#334155"/>
+  <path d="M40 48c2 2 4 3 8 3s6-1 8-3" stroke="#334155" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>
+`)}`;
 
 const SKILL_SIGNAL_MAP = [
   { skill: "SQL", pattern: /\bsql\b|postgres|mysql|snowflake|bigquery/i },
@@ -54,14 +71,18 @@ const DEFAULT_MISSING_SKILLS = [
   "ETL Pipelines",
 ];
 
-const clampScore = (value) => Math.max(0, Math.min(100, Math.round(value)));
+const clampPercent = (value) => Math.max(0, Math.min(100, Math.round(value)));
+
+const clampScore10 = (value) => Math.max(1, Math.min(10, Math.round(value)));
 
 const getRoleFocus = (jobDescription) => {
   const content = jobDescription.toLowerCase();
+
   if (content.includes("data engineer")) return "Data Engineer";
   if (content.includes("backend")) return "Backend Engineer";
   if (content.includes("data analyst")) return "Data Analyst";
   if (content.includes("full stack")) return "Full Stack Engineer";
+
   return "Software Engineer";
 };
 
@@ -117,10 +138,10 @@ const getSuggestions = (atsScore, keywordMatch, missingSkills, roleFocus) => {
 };
 
 const getResumeOptimizedVersion = (roleFocus, missingSkills) => [
-  `Built reliable data and backend workflows by collaborating with product, analytics, and engineering stakeholders.`,
+  "Built reliable data and backend workflows by collaborating with product, analytics, and engineering stakeholders.",
   `Designed and maintained scalable services aligned with ${roleFocus} expectations, improving platform stability and delivery speed.`,
-  `Improved data quality and reporting confidence through clear ownership of validation checks, observability, and incident follow-up.`,
-  `Translated business requirements into production-ready solutions while balancing performance, readability, and maintainability.`,
+  "Improved data quality and reporting confidence through clear ownership of validation checks, observability, and incident follow-up.",
+  "Translated business requirements into production-ready solutions while balancing performance, readability, and maintainability.",
   `Expanded capability in ${missingSkills
     .slice(0, 2)
     .map((entry) => entry.skill)
@@ -281,75 +302,237 @@ const getInterviewQuestions = (fileName, jobDescription, roleFocus) => {
   }));
 };
 
-const getMockInterviewQuestions = (roleFocus) => [
+const getTechnicalMockInterviewQuestions = (roleFocus, jobDescription, fileName) => {
+  const jdSnippet =
+    jobDescription
+      .split(/\n|\./)
+      .map((line) => line.trim())
+      .find(Boolean) || "the role requirements";
+
+  return [
+    {
+      id: "tech-1",
+      type: "technical",
+      category: "Role Fit",
+      question: `How does your background from ${fileName} align with this ${roleFocus} JD statement: "${jdSnippet}"?`,
+      expectedKeywords: ["impact", "metric", "architecture", "delivery"],
+    },
+    {
+      id: "tech-2",
+      type: "technical",
+      category: "Backend",
+      question:
+        "How would you design reliable retry and idempotency handling for resume analysis submissions?",
+      expectedKeywords: ["idempotency", "retry", "queue", "deduplicate"],
+    },
+    {
+      id: "tech-3",
+      type: "technical",
+      category: "Data Engineering",
+      question:
+        "What monitoring strategy would you implement for data freshness and pipeline failures?",
+      expectedKeywords: ["sla", "monitoring", "alert", "freshness"],
+    },
+    {
+      id: "tech-4",
+      type: "technical",
+      category: "System Design",
+      question:
+        "How would you scale a resume scoring platform to support spikes in concurrent uploads?",
+      expectedKeywords: ["autoscaling", "queue", "cache", "throughput"],
+    },
+  ];
+};
+
+const getCodingMockInterviewQuestions = () => [
   {
-    id: "mock-1",
-    category: "Coding",
+    id: "code-1",
+    type: "coding",
+    category: "SQL",
     question:
-      "Write a SQL query to return each candidate's latest ATS score from an analysis table.",
-    expectedKeywords: ["select", "join", "max", "group by"],
+      "Write SQL to fetch the latest ATS record per user from analyses(user_id, ats_score, created_at).",
+    expectedKeywords: ["row_number", "partition by", "order by", "created_at"],
   },
   {
-    id: "mock-2",
-    category: "Coding",
+    id: "code-2",
+    type: "coding",
+    category: "SQL",
     question:
-      "Design pseudo-code for an idempotent endpoint that accepts resume upload analysis requests.",
-    expectedKeywords: ["idempotency", "transaction", "key", "duplicate"],
+      "Explain how window functions can be used to calculate rolling 7-day average ATS scores per job role.",
+    expectedKeywords: ["window", "partition by", "order by", "rows between"],
   },
   {
-    id: "mock-3",
-    category: "Coding",
-    question:
-      "Describe an ETL pseudo-code flow that validates, transforms, and stores resume scoring data.",
-    expectedKeywords: ["extract", "transform", "load", "validation"],
-  },
-  {
-    id: "mock-4",
-    category: "Backend",
-    question: `How would you scale a ${roleFocus} platform to support regional traffic spikes?`,
-    expectedKeywords: ["autoscaling", "queue", "cache", "monitoring"],
-  },
-  {
-    id: "mock-5",
+    id: "code-3",
+    type: "coding",
     category: "Data Engineering",
     question:
-      "How would you prevent duplicate records when ingesting event streams into a data warehouse?",
-    expectedKeywords: ["deduplicate", "primary key", "upsert", "window"],
+      "Design a simple ETL pipeline for ingesting resumes, extracting metadata, and storing normalized records.",
+    expectedKeywords: ["extract", "transform", "load", "schema"],
   },
   {
-    id: "mock-6",
-    category: "Communication",
+    id: "code-4",
+    type: "coding",
+    category: "Data Engineering",
     question:
-      "How do you explain a technical architecture tradeoff to non-technical stakeholders?",
-    expectedKeywords: ["tradeoff", "risk", "impact", "decision"],
+      "What data quality checks would you add to catch duplicate resumes and invalid scoring results?",
+    expectedKeywords: ["null check", "duplicate", "validation", "threshold"],
   },
 ];
 
-const evaluateMockAnswer = (question, answerText) => {
+const mergeInterviewFlow = (technicalQuestions, codingQuestions) => {
+  const mergedQuestions = [];
+  const maxLength = Math.max(technicalQuestions.length, codingQuestions.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    if (technicalQuestions[index]) {
+      mergedQuestions.push(technicalQuestions[index]);
+    }
+
+    if (codingQuestions[index]) {
+      mergedQuestions.push(codingQuestions[index]);
+    }
+  }
+
+  return mergedQuestions;
+};
+
+const getJdAnchorKeyword = (jobDescription, roleFocus) => {
+  const words = jobDescription
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 6);
+
+  return words[0] || roleFocus.toLowerCase();
+};
+
+const evaluateMockAnswer = (question, answerText, context) => {
   const normalizedAnswer = answerText.toLowerCase();
   const wordCount = answerText.trim().split(/\s+/).filter(Boolean).length;
   const keywordHits = question.expectedKeywords.filter((keyword) =>
     normalizedAnswer.includes(keyword.toLowerCase()),
   ).length;
+  const structureSignals = [
+    "first",
+    "then",
+    "finally",
+    "because",
+    "tradeoff",
+    "impact",
+  ];
+  const structureHits = structureSignals.filter((token) =>
+    normalizedAnswer.includes(token),
+  ).length;
 
-  const score = clampScore(
-    50 + Math.min(wordCount, 24) + keywordHits * 7 + Math.floor(Math.random() * 8),
+  const scoreOutOf10 = clampScore10(
+    2 +
+      Math.min(4, keywordHits) +
+      Math.min(2, Math.floor(wordCount / 18)) +
+      Math.min(2, structureHits) +
+      Math.floor(Math.random() * 2),
   );
 
-  let feedback = "Good start. Add a bit more structure and implementation detail.";
-  if (score >= 85) {
+  let feedback = "Good start. Add more implementation detail and business impact.";
+  if (scoreOutOf10 >= 8) {
     feedback =
-      "Strong response. You covered implementation detail and practical tradeoffs clearly.";
-  } else if (score >= 70) {
+      "Strong answer. Clear structure and technical depth are visible in your response.";
+  } else if (scoreOutOf10 >= 6) {
     feedback =
-      "Solid response. Add clearer metrics, edge cases, and operational safeguards to strengthen it.";
+      "Solid answer. Add clearer tradeoffs and measurable outcomes to strengthen it.";
   }
 
   if (keywordHits < 2) {
-    feedback += " Include more concrete technical keywords to improve precision.";
+    feedback += " Include more precise technical terminology.";
   }
 
-  return { score, feedback };
+  const primaryMissingSkill = context.missingSkills?.[0]?.skill || "role-specific skills";
+  const jdAnchor = getJdAnchorKeyword(context.jobDescription || "", context.roleFocus);
+  const improvedAnswerSuggestion = `For better alignment with the ${context.roleFocus} JD, explicitly mention ${primaryMissingSkill} and tie it to one measurable result from your ${context.fileName} experience. Add implementation detail around "${jdAnchor}" to make the answer more concrete.`;
+
+  return {
+    scoreOutOf10,
+    feedback,
+    improvedAnswerSuggestion,
+    keywordHits,
+    wordCount,
+  };
+};
+
+const buildMockInterviewResult = (evaluations, resultContext) => {
+  if (!evaluations.length) {
+    return null;
+  }
+
+  const totalScore = evaluations.reduce(
+    (total, entry) => total + entry.scoreOutOf10,
+    0,
+  );
+  const maxScore = evaluations.length * 10;
+  const technicalEvaluations = evaluations.filter(
+    (entry) => entry.type === "technical",
+  );
+  const codingEvaluations = evaluations.filter((entry) => entry.type === "coding");
+  const averageTechnicalScore = technicalEvaluations.length
+    ? technicalEvaluations.reduce((sum, item) => sum + item.scoreOutOf10, 0) /
+      technicalEvaluations.length
+    : 0;
+  const averageCodingScore = codingEvaluations.length
+    ? codingEvaluations.reduce((sum, item) => sum + item.scoreOutOf10, 0) /
+      codingEvaluations.length
+    : 0;
+  const averageKeywordCoverage =
+    evaluations.reduce((sum, item) => sum + item.keywordHits, 0) / evaluations.length;
+  const averageWordCount =
+    evaluations.reduce((sum, item) => sum + item.wordCount, 0) / evaluations.length;
+
+  const strengths = [];
+  if (averageTechnicalScore >= 7) {
+    strengths.push("Strong technical clarity across architecture and system tradeoffs.");
+  }
+  if (averageCodingScore >= 7) {
+    strengths.push("Good coding and SQL reasoning with relevant implementation detail.");
+  }
+  if (averageKeywordCoverage >= 2) {
+    strengths.push("Uses role-relevant terminology aligned with the job description.");
+  }
+  if (strengths.length === 0) {
+    strengths.push("Shows baseline readiness and can improve quickly with structured practice.");
+  }
+
+  const weaknesses = [];
+  if (averageTechnicalScore < 6.5) {
+    weaknesses.push("Technical answers need clearer structure and more measurable impact.");
+  }
+  if (averageCodingScore < 6.5) {
+    weaknesses.push("Coding responses need deeper SQL/data engineering specifics.");
+  }
+  if (averageWordCount < 24) {
+    weaknesses.push("Answers are short; add more context, tradeoffs, and implementation steps.");
+  }
+  if (weaknesses.length === 0) {
+    weaknesses.push("Minor gap: include more numeric impact metrics in each answer.");
+  }
+
+  const jdSpecificImprovementSuggestions = resultContext.missingSkills
+    .slice(0, 3)
+    .map(
+      (entry) =>
+        `Strengthen JD alignment by addressing ${entry.skill} with a concrete project example and measurable result.`,
+    );
+
+  const resumeSpecificImprovementSuggestions = [
+    ...resultContext.resumeImprovementSuggestions.slice(0, 2),
+    "Reference one optimized resume bullet during interview answers to reinforce credibility.",
+  ];
+
+  return {
+    totalScore,
+    maxScore,
+    strengths,
+    weaknesses,
+    jdSpecificImprovementSuggestions,
+    resumeSpecificImprovementSuggestions,
+  };
 };
 
 const ProgressBar = ({ label, value }) => (
@@ -385,10 +568,10 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
 
       const roleFocus = getRoleFocus(jobDescription);
       const missingSkills = getMissingSkills(jobDescription);
-      const atsScore = clampScore(
+      const atsScore = clampPercent(
         88 - missingSkills.length * 4 + (Math.floor(Math.random() * 15) - 7),
       );
-      const keywordMatch = clampScore(
+      const keywordMatch = clampPercent(
         76 + (Math.floor(Math.random() * 17) - 8) - missingSkills.length * 2,
       );
       const resumeImprovementSuggestions = getSuggestions(
@@ -397,7 +580,7 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
         missingSkills,
         roleFocus,
       );
-      const aiDetectionProbability = clampScore(Math.floor(Math.random() * 36) + 8);
+      const aiDetectionProbability = clampPercent(Math.floor(Math.random() * 36) + 8);
       const resumeOptimizedVersion = getResumeOptimizedVersion(
         roleFocus,
         missingSkills,
@@ -407,7 +590,16 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
         jobDescription,
         roleFocus,
       );
-      const mockInterviewQuestions = getMockInterviewQuestions(roleFocus);
+      const technicalQuestions = getTechnicalMockInterviewQuestions(
+        roleFocus,
+        jobDescription,
+        file.name,
+      );
+      const codingQuestions = getCodingMockInterviewQuestions();
+      const mockInterviewQuestions = mergeInterviewFlow(
+        technicalQuestions,
+        codingQuestions,
+      );
       const analyzedAt = new Date();
       const analysisId =
         typeof crypto !== "undefined" && crypto.randomUUID
@@ -430,6 +622,8 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
         keywordMatch,
         suggestions: resumeImprovementSuggestions,
         interviewQuestions,
+        technicalQuestions,
+        codingQuestions,
         mockInterviewQuestions,
         mockedAiAnalysis,
         ...mockedAiAnalysis,
@@ -486,12 +680,13 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
     }
 
     const activeQuestion = result.mockInterviewQuestions[mockQuestionIndex];
-    const evaluation = evaluateMockAnswer(activeQuestion, mockAnswer.trim());
+    const evaluation = evaluateMockAnswer(activeQuestion, mockAnswer.trim(), result);
     const evaluationRecord = {
       questionId: activeQuestion.id,
       question: activeQuestion.question,
-      score: evaluation.score,
-      feedback: evaluation.feedback,
+      type: activeQuestion.type,
+      category: activeQuestion.category,
+      ...evaluation,
     };
 
     setCurrentMockEvaluation(evaluationRecord);
@@ -526,13 +721,28 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
   const isLastMockQuestion =
     Boolean(result) && mockQuestionIndex === result.mockInterviewQuestions.length - 1;
   const completedQuestionCount = mockEvaluations.length;
-  const averageMockScore =
-    mockEvaluations.length > 0
-      ? Math.round(
-          mockEvaluations.reduce((total, item) => total + item.score, 0) /
-            mockEvaluations.length,
-        )
-      : 0;
+  const completedTechnicalCount = mockEvaluations.filter(
+    (entry) => entry.type === "technical",
+  ).length;
+  const completedCodingCount = mockEvaluations.filter(
+    (entry) => entry.type === "coding",
+  ).length;
+  const averageMockScore = completedQuestionCount
+    ? (
+        mockEvaluations.reduce((total, item) => total + item.scoreOutOf10, 0) /
+        completedQuestionCount
+      ).toFixed(1)
+    : "0.0";
+  const isInterviewCompleted =
+    Boolean(result) && completedQuestionCount === result.mockInterviewQuestions.length;
+
+  const finalMockInterviewResult = useMemo(() => {
+    if (!result || !isInterviewCompleted) {
+      return null;
+    }
+
+    return buildMockInterviewResult(mockEvaluations, result);
+  }, [isInterviewCompleted, mockEvaluations, result]);
 
   return (
     <section className="space-y-6">
@@ -696,6 +906,25 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Technical Questions
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-800">
+                      {completedTechnicalCount} / {result.technicalQuestions.length} completed
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Coding Questions
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-800">
+                      {completedCodingCount} / {result.codingQuestions.length} completed
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
@@ -723,10 +952,32 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                 {currentMockQuestion ? (
                   <>
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                      <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600">
-                        {currentMockQuestion.category}
-                      </span>
-                      <p className="mt-2 text-sm font-medium text-slate-800">
+                      <div className="mb-3 flex items-center gap-3">
+                        <img
+                          src={AI_COACH_AVATAR}
+                          alt="AI Coach avatar"
+                          className="h-12 w-12 rounded-full border border-slate-300 bg-white p-1"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">AI Coach</p>
+                          <p className="text-xs text-slate-500">
+                            Digital interviewer avatar
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+                          {currentMockQuestion.type === "coding"
+                            ? "Coding Question"
+                            : "Technical Question"}
+                        </span>
+                        <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+                          {currentMockQuestion.category}
+                        </span>
+                      </div>
+
+                      <p className="text-sm font-medium text-slate-800">
                         {currentMockQuestion.question}
                       </p>
                     </div>
@@ -780,10 +1031,16 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                     {currentMockEvaluation ? (
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                         <p className="text-sm font-semibold text-emerald-800">
-                          Evaluation score: {currentMockEvaluation.score}/100
+                          Score: {currentMockEvaluation.scoreOutOf10}/10
                         </p>
                         <p className="mt-1 text-sm text-emerald-700">
                           {currentMockEvaluation.feedback}
+                        </p>
+                        <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                          Improved answer suggestion
+                        </p>
+                        <p className="mt-1 text-sm text-emerald-700">
+                          {currentMockEvaluation.improvedAnswerSuggestion}
                         </p>
                       </div>
                     ) : null}
@@ -794,7 +1051,74 @@ export default function ResumeAnalyzer({ onAnalysisCreated }) {
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                     Completed questions: {completedQuestionCount} /{" "}
                     {result.mockInterviewQuestions.length} - Average score:{" "}
-                    <span className="font-semibold">{averageMockScore}</span>
+                    <span className="font-semibold">{averageMockScore}/10</span>
+                  </div>
+                ) : null}
+
+                {finalMockInterviewResult ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Mock Interview Result
+                    </h4>
+                    <p className="mt-2 text-sm text-slate-700">
+                      Total score:{" "}
+                      <span className="font-semibold text-slate-900">
+                        {finalMockInterviewResult.totalScore} /{" "}
+                        {finalMockInterviewResult.maxScore}
+                      </span>
+                    </p>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Strengths
+                        </p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                          {finalMockInterviewResult.strengths.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Weaknesses
+                        </p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                          {finalMockInterviewResult.weaknesses.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          JD specific improvement suggestions
+                        </p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                          {finalMockInterviewResult.jdSpecificImprovementSuggestions.map(
+                            (item) => (
+                              <li key={item}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Resume specific improvement suggestions
+                        </p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                          {finalMockInterviewResult.resumeSpecificImprovementSuggestions.map(
+                            (item) => (
+                              <li key={item}>{item}</li>
+                            ),
+                          )}
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>
