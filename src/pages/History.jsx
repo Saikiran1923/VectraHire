@@ -1,4 +1,4 @@
-export default function History({ analyses }) {
+export default function History({ analyses, onDeleteAnalysis }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -18,6 +18,7 @@ export default function History({ analyses }) {
                 <th className="px-3 py-2 font-medium">Resume</th>
                 <th className="px-3 py-2 font-medium">Date</th>
                 <th className="px-3 py-2 font-medium">ATS Score</th>
+                <th className="px-3 py-2 font-medium">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -29,6 +30,15 @@ export default function History({ analyses }) {
                     <span className="rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-700">
                       {entry.atsScore}%
                     </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => onDeleteAnalysis(entry.id)}
+                      className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

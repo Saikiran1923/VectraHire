@@ -63,6 +63,14 @@ export default function App() {
     });
   };
 
+  const handleDeleteAnalysis = (analysisId) => {
+    setAnalyses((previous) => {
+      const next = previous.filter((entry) => entry.id !== analysisId);
+      localStorage.setItem(ANALYSES_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
     <Routes>
       <Route
@@ -89,12 +97,25 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Dashboard analyses={analyses} />} />
+        <Route
+          index
+          element={
+            <Dashboard
+              analyses={analyses}
+              onDeleteAnalysis={handleDeleteAnalysis}
+            />
+          }
+        />
         <Route
           path="analyzer"
           element={<ResumeAnalyzer onAnalysisCreated={handleAnalysisCreated} />}
         />
-        <Route path="history" element={<History analyses={analyses} />} />
+        <Route
+          path="history"
+          element={
+            <History analyses={analyses} onDeleteAnalysis={handleDeleteAnalysis} />
+          }
+        />
       </Route>
 
       <Route
