@@ -1,0 +1,41 @@
+{
+  "name": "vectrahire",
+  "version": "1.0.0",
+  "description": "VectraHire resume analysis dashboard built with React.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saikiran1923/VectraHire.git"
+  },
+  "keywords": [
+    "react",
+    "vite",
+    "tailwindcss",
+    "resume",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Saikiran1923/VectraHire/issues"
+  },
+  "homepage": "https://github.com/Saikiran1923/VectraHire#readme",
+  "dependencies": {
+    "axios": "^1.13.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@vitejs/plugin-react": "^5.1.4",
+    "tailwindcss": "^4.1.18",
+    "vite": "^7.3.1"
+  }
+}
